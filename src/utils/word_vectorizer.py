@@ -45,9 +45,9 @@ VIP_dict = {
 
 class WordVectorizer(object):
     def __init__(self, meta_root, prefix):
-        vectors = np.load(pjoin(meta_root, '%s_data.npy'%prefix))
-        words = pickle.load(open(pjoin(meta_root, '%s_words.pkl'%prefix), 'rb'))
-        word2idx = pickle.load(open(pjoin(meta_root, '%s_idx.pkl'%prefix), 'rb'))
+        vectors = np.load(pjoin(meta_root, '%s_data.npy'%prefix)) # 最大10m for mdm (4199, 300)
+        words = pickle.load(open(pjoin(meta_root, '%s_words.pkl'%prefix), 'rb'))    # 68k for mdm glove, 4199 words
+        word2idx = pickle.load(open(pjoin(meta_root, '%s_idx.pkl'%prefix), 'rb'))   # 80k for mdm glove
         self.word2vec = {w: vectors[word2idx[w]] for w in words}
 
     def _get_pos_ohot(self, pos):
@@ -64,7 +64,7 @@ class WordVectorizer(object):
     def __getitem__(self, item):
         word, pos = item.split('/')
         if word in self.word2vec:
-            word_vec = self.word2vec[word]
+            word_vec = self.word2vec[word]  # (300)
             vip_pos = None
             for key, values in VIP_dict.items():
                 if word in values:
@@ -78,3 +78,26 @@ class WordVectorizer(object):
             word_vec = self.word2vec['unk']
             pos_vec = self._get_pos_ohot('OTHER')
         return word_vec, pos_vec
+    
+
+if __name__=="__main__":
+    data_dir='/home/guoling/HOIs/all_datasets/OMOMO/data_diy'
+    w_vectorizer=WordVectorizer(pjoin(data_dir,'glove/glove_mdm'),'our_vab')
+    
+    text_file_path="/home/data/HumanML3D/texts/002426.txt"
+    with open(text_file_path, 'r') as f:
+        lines = f.readlines()
+        lines = [line.strip() for line in lines]
+    # tokens = text.split()
+    # pos_one_hots = []
+    # print(lines[0])
+    line=lines[0]
+    caption=line.split('#')[0]
+    tokens=[token.strip() for token in line.split('#')[1].split(' ')]
+    print(caption, '\n', tokens)
+    pos_one_hots = []
+    word_embeddings = []
+    for token in tokens:
+        word_emb, pos_oh = w_vectorizer[token]
+        pos_one_hots.append(pos_oh[None, :])
+        word_embeddings.append(word_emb[None, :])

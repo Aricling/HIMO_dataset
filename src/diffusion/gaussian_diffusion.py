@@ -291,7 +291,7 @@ class GaussianDiffusion:
 
         B, C = x.shape[:2]
         assert t.shape == (B,)
-        model_output = model(x, self._scale_timesteps(t), **model_kwargs)
+        model_output = model(x, self._scale_timesteps(t), **model_kwargs)   # [bs, nf, 24*3+22*6+3+9=216]
 
         if 'inpainting_mask' in model_kwargs['y'].keys() and 'inpainted_motion' in model_kwargs['y'].keys():
             inpainting_mask, inpainted_motion = model_kwargs['y']['inpainting_mask'], model_kwargs['y']['inpainted_motion']
@@ -326,7 +326,7 @@ class GaussianDiffusion:
                     np.log(np.append(self.posterior_variance[1], self.betas[1:])),
                 ),
                 ModelVarType.FIXED_SMALL: (
-                    self.posterior_variance,
+                    self.posterior_variance,    # 这些都是固定的参数值
                     self.posterior_log_variance_clipped,
                 ),
             }[self.model_var_type]
@@ -354,7 +354,7 @@ class GaussianDiffusion:
             )
             model_mean = model_output
         elif self.model_mean_type in [ModelMeanType.START_X, ModelMeanType.EPSILON]:  # THIS IS US!
-            if self.model_mean_type == ModelMeanType.START_X:
+            if self.model_mean_type == ModelMeanType.START_X:   # here
                 pred_xstart = process_xstart(model_output)
             else:
                 pred_xstart = process_xstart(
@@ -642,12 +642,13 @@ class GaussianDiffusion:
             cond_fn_with_grad=cond_fn_with_grad,
             const_noise=const_noise,
         )):
+            print(i)
             if dump_steps is not None and i in dump_steps:
                 dump.append(deepcopy(sample["sample"]))
             final = sample
         if dump_steps is not None:
             return dump
-        return final["sample"]
+        return final["sample"]  # 不知道为什么eval的时候要跑这么多下，其实最后也就是最后一个值
 
     def p_sample_loop_progressive(
         self,
@@ -1235,7 +1236,7 @@ class GaussianDiffusion:
             model_kwargs = {} 
         if noise is None:
             noise = th.randn_like(x_start)
-        x_t = self.q_sample(x_start, t, noise=noise)
+        x_t = self.q_sample(x_start, t, noise=noise)    # 其实就是根据t step来加噪
 
         terms = {}
 
@@ -1288,12 +1289,14 @@ class GaussianDiffusion:
             model_output=model_output.permute(0,2,1).unsqueeze(1) # [bs, 1, d, nframes]
             target=target.permute(0,2,1).unsqueeze(1) # [bs, 1, d, nframes]
 
+            # 总体input的loss
             if self.lambda_recon>0:
                 terms["recon_mse"]=self.masked_l2(target, model_output, mask)
             
+            # 人体的joints和velocity的loss
             if self.lambda_pos>0:
-                target_pos=target[:,:,:52*3,:]
-                model_output_pos=model_output[:,:,:52*3,:]
+                target_pos=target[:,:,:24*3,:]
+                model_output_pos=model_output[:,:,:24*3,:]
                 terms["pos_mse"]=self.masked_l2(target_pos, model_output_pos, mask)
 
             if self.lambda_vel>0:
@@ -1301,6 +1304,7 @@ class GaussianDiffusion:
                 model_output_vel=model_output_pos[:,:,:,1:]-model_output_pos[:,:,:,:-1]
                 terms["vel_mse"]=self.masked_l2(taget_vel, model_output_vel, mask[:,:,:,1:])
             
+            # 物体sampled verts旋转后的loss
             if self.lambda_geo>0:
                 def get_transformed_verts(states,verts):
                     """
@@ -1320,19 +1324,26 @@ class GaussianDiffusion:
                     transformed_verts=transformed_verts.permute(0,2,3,1) # [bs, 1024, 3, nframes]
                     return transformed_verts
                 if self.train_args.network.split('_')[-1]=='2o':
-                    target_obj1_state=target[:,:,471:471+9,:] # [bs,1,9,nframes]
-                    target_obj2_state=target[:,:,471+9:471+9+9,:]
-                    model_output_obj1_state=model_output[:,:,471:471+9,:]
-                    model_output_obj2_state=model_output[:,:,471+9:471+9+9,:]
-                    obj1_sampled_verts=model_kwargs['y']['obj1_sampled_verts'] # [bs,1024,3]
-                    obj2_sampled_verts=model_kwargs['y']['obj2_sampled_verts'] 
+                    target_obj_state=target[:,:,-9:,:]  # [bs,1,9,nframes]
+                    model_output_obj_state=model_output[:,:,-9:,:]
+                    obj_sampled_verts=model_kwargs['y']['obj_sampled_verts'] # [bs,1024,3]
+                    target_obj_verts=get_transformed_verts(target_obj_state,obj_sampled_verts) # [bs, 1024, 3, nframes]
+                    model_output_obj_verts=get_transformed_verts(model_output_obj_state,obj_sampled_verts)
+                    terms["obj_geo_mse"]=self.masked_l2(target_obj_verts, model_output_obj_verts, mask)
 
-                    target_obj1_verts=get_transformed_verts(target_obj1_state,obj1_sampled_verts) # [bs, 1024, 3, nframes]
-                    target_obj2_verts=get_transformed_verts(target_obj2_state,obj2_sampled_verts)
-                    model_output_obj1_verts=get_transformed_verts(model_output_obj1_state,obj1_sampled_verts)
-                    model_output_obj2_verts=get_transformed_verts(model_output_obj2_state,obj2_sampled_verts)
-                    terms["obj1_geo_mse"]=self.masked_l2(target_obj1_verts, model_output_obj1_verts, mask)
-                    terms["obj2_geo_mse"]=self.masked_l2(target_obj2_verts, model_output_obj2_verts, mask)
+                    # target_obj1_state=target[:,:,471:471+9,:] # [bs,1,9,nframes]
+                    # target_obj2_state=target[:,:,471+9:471+9+9,:]
+                    # model_output_obj1_state=model_output[:,:,471:471+9,:]
+                    # model_output_obj2_state=model_output[:,:,471+9:471+9+9,:]
+                    # obj1_sampled_verts=model_kwargs['y']['obj1_sampled_verts'] # [bs,1024,3]
+                    # obj2_sampled_verts=model_kwargs['y']['obj2_sampled_verts'] 
+
+                    # target_obj1_verts=get_transformed_verts(target_obj1_state,obj1_sampled_verts) # [bs, 1024, 3, nframes]
+                    # target_obj2_verts=get_transformed_verts(target_obj2_state,obj2_sampled_verts)
+                    # model_output_obj1_verts=get_transformed_verts(model_output_obj1_state,obj1_sampled_verts)
+                    # model_output_obj2_verts=get_transformed_verts(model_output_obj2_state,obj2_sampled_verts)
+                    # terms["obj1_geo_mse"]=self.masked_l2(target_obj1_verts, model_output_obj1_verts, mask)
+                    # terms["obj2_geo_mse"]=self.masked_l2(target_obj2_verts, model_output_obj2_verts, mask)
                 elif self.train_args.network.split('_')[-1]=='3o':
                     target_obj1_state=target[:,:,471:471+9,:]
                     target_obj2_state=target[:,:,471+9:471+9+9,:]

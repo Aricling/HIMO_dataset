@@ -79,11 +79,12 @@ class TrainLoop:
             mm_num_repeats = 0  # mm is super slow hence we won't run it during training
             gen_dataset=Evaluation_Dataset(args,split='val',mode='eval')
             gen_loader=DataLoader(gen_dataset,batch_size=args.eval_batch_size,
-                                  shuffle=True,num_workers=8,drop_last=True,collate_fn=gt_collate_fn)
+                                  shuffle=True,num_workers=0,drop_last=True,collate_fn=gt_collate_fn)
             gt_dataset=Evaluation_Dataset(args,split='val',mode='gt')
             self.eval_gt_data=DataLoader(gt_dataset,batch_size=args.eval_batch_size,
-                                  shuffle=True,num_workers=8,drop_last=True,collate_fn=gt_collate_fn)
+                                  shuffle=True,num_workers=0,drop_last=True,collate_fn=gt_collate_fn)
             
+            # 这个其实主要就是text，motion, movement的三个encoder，来进行eval的，并且放进了GPU里面
             self.eval_wrapper=EvaluationWrapper(args)
             self.eval_data={
                 'test':lambda :get_eval_gen_loader(

@@ -1,7 +1,9 @@
 import os
 import os.path as osp
 import json
-
+import sys
+sys.path.append("./")
+print(sys.path)
 from src.utils.misc import fixseed,makepath
 from src.utils.parser_utils import train_net_2o_args
 from src.utils.model_utils import create_model_and_diffusion
@@ -14,12 +16,16 @@ from src.dataset.tensors import himo_2o_collate_fn
 from torch.utils.data import DataLoader
 from loguru import logger
 
+import shutil
+
 def main():
     args=train_net_2o_args()
     # save path
     save_path=osp.join(args.save_dir,args.exp_name)
     if osp.exists(save_path):
-        raise FileExistsError(f'{save_path} already exists!')
+        shutil.rmtree(save_path)
+        makepath(save_path)
+        # raise FileExistsError(f'{save_path} already exists!')
         # pass
     else:
         makepath(save_path)
@@ -39,7 +45,7 @@ def main():
     logger.info('Loading Training dataset...')
     train_dataset=HIMO_2O(args,split='train')
     data_loader=DataLoader(train_dataset,batch_size=args.batch_size,
-                           shuffle=True,num_workers=8,drop_last=True,collate_fn=himo_2o_collate_fn)
+                           shuffle=True,num_workers=0,drop_last=True,collate_fn=himo_2o_collate_fn)
 
     # get model and diffusion
     logger.info('Loading Model and Diffusion...')

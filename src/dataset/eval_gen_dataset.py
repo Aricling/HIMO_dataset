@@ -96,16 +96,20 @@ class Evaluation_generator_Dataset(Dataset):
                     break
                     
                 if args.obj=='2o':
-                    word_embeddings,pos_one_hots,caption,sent_len,motion,m_length,tokens,\
-                        obj1_bps,obj2_bps,init_state,obj1_name,obj2_name,betas=eval_data_batch
-                    tokens=[t.split('_') for t in tokens]
+                    ## word_embeddings,pos_one_hots,caption,sent_len,motion,m_length,tokens,\
+                        ## obj1_bps,obj2_bps,init_state,obj1_name,obj2_name,betas=eval_data_batch
+                    
+                    caption,motion,m_length,\
+                        obj_bps,init_state,obj_name, betas=eval_data_batch
+                    
+                    # tokens直接先不管了
+                    # tokens=[t.split('_') for t in tokens]
 
                     model_kwargs={
                                 'y':{
                                     'length':m_length.to(dist_utils.dev()), # [bs]
                                     'text':caption,
-                                    'obj1_bps':obj1_bps.to(dist_utils.dev()),
-                                    'obj2_bps':obj2_bps.to(dist_utils.dev()),
+                                    'obj_bps':obj_bps.to(dist_utils.dev()),
                                     'init_state':init_state.to(dist_utils.dev()),
                                     'mask':lengths_to_mask(m_length,motion.shape[1]).unsqueeze(1).unsqueeze(1).to(dist_utils.dev()) # [bs,1,1,nf]
                                 }
@@ -143,7 +147,8 @@ class Evaluation_generator_Dataset(Dataset):
                         motion.shape,
                         clip_denoised=clip_denoised,
                         model_kwargs=model_kwargs,
-                        skip_timesteps=0,  # 0 is the default value - i.e. don't skip any step
+                        # 先改成950，不然跑的太慢了
+                        skip_timesteps=995,  # 0 is the default value - i.e. don't skip any step
                         init_image=None,
                         progress=False,
                         dump_steps=None,
@@ -152,7 +157,8 @@ class Evaluation_generator_Dataset(Dataset):
                     ) # bs,nf,315
 
                     # export the model result 
-                    network=args.model_path.split('/')[-2]
+                    network=args.network
+                    # network=args.model_path.split('/')[-2]
                     export_path=osp.join('./export_results',network,'{}.npz'.format(i))
                     os.makedirs(osp.dirname(export_path),exist_ok=True)
                     if args.obj=='2o':
@@ -161,8 +167,7 @@ class Evaluation_generator_Dataset(Dataset):
                                 'out':model_out_sample[bs_i].squeeze().cpu().numpy(),
                                 'length':m_length[bs_i].cpu().numpy(),
                                 'caption':caption[bs_i],
-                                'obj1_name':obj1_name[bs_i],
-                                'obj2_name':obj2_name[bs_i],
+                                'obj_name':obj_name[bs_i],
                                 'betas':betas[bs_i].cpu().numpy(),
                             } for bs_i in range(self.dataloader.batch_size)
                         }
@@ -186,8 +191,8 @@ class Evaluation_generator_Dataset(Dataset):
                                 'motion':model_out_sample[bs_i].squeeze().cpu().numpy(),
                                 'length':m_length[bs_i].cpu().numpy(),
                                 'caption':caption[bs_i],
-                                'tokens':tokens[bs_i],
-                                'cap_len':sent_len[bs_i].cpu().numpy(),
+                                # 'tokens':tokens[bs_i],
+                                # 'cap_len':sent_len[bs_i].cpu().numpy(),
                             } for bs_i in range(self.dataloader.batch_size)
                         ]
                         generated_motion+=sub_dicts

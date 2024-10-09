@@ -30,7 +30,7 @@ def add_data_options(parser):
     group=parser.add_argument_group('data')
     group.add_argument("--dataset",default='himo', choices=['himo','eval'], type=str,
                        help="Dataset name (choose from list).")
-    group.add_argument("--data_dir", default="/data/xuliang/HO2_subsets_original/HO2_final", type=str,
+    group.add_argument("--data_dir", default="/home/guoling/HOIs/all_datasets/OMOMO/data_diy_300", type=str,
                        help=" dataset directory.")
     
 def add_diffusion_options(parser):
@@ -60,7 +60,7 @@ def add_training_net_2o_options(parser):
     group.add_argument("--cond_mask_prob", default=.1, type=float,
                        help="The probability of masking the condition during training."
                             " For classifier-free guidance learning.")
-    group.add_argument("--eval_during_training", default=True, type=bool,
+    group.add_argument("--eval_during_training", default=False, type=bool,
                        help="If True, will run evaluation during training.")
     group.add_argument("--eval_batch_size", default=32, type=int,)
     group.add_argument("--obj",default='2o',choices=['2o','3o'],type=str,)
@@ -69,9 +69,9 @@ def add_training_net_2o_options(parser):
     group.add_argument("--lambda_pos", default=1.0, type=float, help="Joint Position loss weight.")
     group.add_argument("--lambda_geo",default=1.0,type=float,help="Geometric loss weight.")
     group.add_argument("--lambda_vel", default=1.0, type=float, help="Joint Velocity loss weight.")
-    group.add_argument("--lambda_sp",default=1.0,type=float,help="Object Spation Relation loss weight.")
+    group.add_argument("--lambda_sp",default=0.0,type=float,help="Object Spation Relation loss weight.")
 
-    group.add_argument("--batch_size", default=128, type=int, help="Batch size during training.")
+    group.add_argument("--batch_size", default=64, type=int, help="Batch size during training.")
     group.add_argument("--lr", default=1e-4, type=float, help="Learning rate.")
     group.add_argument("--weight_decay", default=0.99, type=float, help="Optimizer weight decay.")
     group.add_argument("--lr_anneal_steps", default=0, type=int, help="Number of learning rate anneal steps.")

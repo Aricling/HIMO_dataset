@@ -16,12 +16,14 @@ def build_evaluators(opt):
                                       hidden_size=opt['dim_motion_hidden'],
                                       output_size=opt['dim_coemb_hidden'],
                                       device=opt['device'])
-    checkpoint=torch.load(osp.join(opt['checkpoint_dir'],'model','finest.tar'),
-                          map_location=opt['device'])
-    movement_enc.load_state_dict(checkpoint['movement_encoder'])
-    text_enc.load_state_dict(checkpoint['text_encoder'])
-    motion_enc.load_state_dict(checkpoint['motion_encoder'])
-    print('Loading Evaluation Model Wrapper (Epoch %d) Completed!!' % (checkpoint['epoch']))
+    # checkpoint=torch.load(osp.join(opt['checkpoint_dir'],'model','finest.tar'),
+    #                       map_location=opt['device'])
+    # movement_enc.load_state_dict(checkpoint['movement_encoder'])
+    # text_enc.load_state_dict(checkpoint['text_encoder'])
+    # motion_enc.load_state_dict(checkpoint['motion_encoder'])
+    # print('Loading Evaluation Model Wrapper (Epoch %d) Completed!!' % (checkpoint['epoch']))
+
+    print("Loading Movement Encoder, Text Encoder, and Motion Encoder Completed!! src/feature_extractor/eval_wrapper.py")
 
     return text_enc,motion_enc,movement_enc
 

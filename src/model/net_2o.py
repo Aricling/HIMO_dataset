@@ -8,7 +8,8 @@ from src.model.blocks import TransformerBlock
 
 class NET_2O(nn.Module):
     def __init__(self,
-                 n_feats=(52*3+52*6+3+2*9),
+                 n_feats=(24*3+22*6+3 +6+3),
+                #  n_feats=(52*3+52*6+3+2*9),
                  clip_dim=512,
                  latent_dim=512,
                  ff_size=1024, 
@@ -39,10 +40,10 @@ class NET_2O(nn.Module):
         # object_geometry embedder
         self.embed_obj_bps=nn.Linear(1024*3,self.latent_dim)
         # object init state embeddr
-        self.embed_obj_pose=nn.Linear(2*self.latent_dim+2*9+2*9,self.latent_dim)
+        self.embed_obj_pose=nn.Linear(self.latent_dim+2*9,self.latent_dim)
 
         # human embedder
-        self.embed_human_pose=nn.Linear(2*(52*3+52*6+3),self.latent_dim)
+        self.embed_human_pose=nn.Linear(2*(24*3+22*6+3),self.latent_dim)
 
         # position encoding
         self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, dropout=self.dropout)
@@ -64,6 +65,8 @@ class NET_2O(nn.Module):
         # self.communication_module=nn.ModuleList()
         # for i in range(8):
         #     self.communication_module.append(MutalCrossAttentionBlock(self.latent_dim,self.num_heads,self.ff_size,self.dropout))
+        
+        
         self.obj_blocks=nn.ModuleList()
         self.human_blocks=nn.ModuleList()
         for i in range(self.num_layers):
@@ -75,36 +78,35 @@ class NET_2O(nn.Module):
         self.embed_timestep=TimestepEmbedder(self.latent_dim, self.sequence_pos_encoder)
 
         # object output process
-        self.obj_output_process=nn.Linear(self.latent_dim,2*9)
+        self.obj_output_process=nn.Linear(self.latent_dim,9)
         # human motion output process
-        self.human_output_process=nn.Linear(self.latent_dim,52*3+52*6+3)
+        self.human_output_process=nn.Linear(self.latent_dim,24*3+22*6+3)
 
     def forward(self,x,timesteps,y=None):
         bs,nframes,n_feats=x.shape
         emb=self.embed_timestep(timesteps) # [1, bs, latent_dim]
 
         enc_text=self.encode_text(y['text'])
-        emb+=self.mask_cond(enc_text) # 1,bs,latent_dim
+        emb+=self.mask_cond(enc_text) # 1,bs,latent_dim, 包含了position和text的embedding信息；然后mask是一个随机概率，有点classifier-free的意思
 
         x=x.permute((1,0,2)) # nframes,bs,nfeats
-        human_x,obj_x=torch.split(x,[52*3+52*6+3,2*9],dim=-1) # [nframes,bs,52*3+52*6+3],[nframes,bs,2*9]
+        human_x,obj_x=torch.split(x,[24*3+22*6+3,6+3],dim=-1) # [nframes,bs,24*3+22*6+3],[nframes,bs,6+3]
 
         # encode object geometry
-        obj1_bps,obj2_bps=y['obj1_bps'].reshape(bs,-1),y['obj2_bps'].reshape(bs,-1) # [b,1024,3]
-        obj1_bps_emb=self.embed_obj_bps(obj1_bps) # [b,latent_dim]
-        obj2_bps_emb=self.embed_obj_bps(obj2_bps) # [b,latent_dim]
-        obj_geo_emb=torch.concat([obj1_bps_emb,obj2_bps_emb],dim=-1).unsqueeze(0).repeat((nframes,1,1)) # [nf,b,2*latent_dim]
+        obj_bps=y['obj_bps'].reshape(bs,-1) # [b,1024,3]
+        obj_bps_emb=self.embed_obj_bps(obj_bps) # [b,latent_dim]
+        obj_geo_emb=obj_bps_emb.unsqueeze(0).repeat((nframes,1,1)) # [nf,b,latent_dim]
 
         # init_state,mask the other frames by padding zeros
-        init_state=y['init_state'].unsqueeze(0) # [1,b,52*3+52*6+3+2*9]
-        padded_zeros=torch.zeros((nframes-1,bs,52*3+52*6+3+2*9),device=init_state.device)
-        init_state=torch.concat([init_state,padded_zeros],dim=0) # [nf,b,52*3+52*6+3+2*9]
+        init_state=y['init_state'].unsqueeze(0) # [1,b,24*3+22*6+3 + 9]
+        padded_zeros=torch.zeros((nframes-1,bs,24*3+22*6+3 + 9),device=init_state.device)
+        init_state=torch.concat([init_state,padded_zeros],dim=0) # [nf,b,24*3+22*6+3 + 9]
 
         # seperate the object and human init state
-        human_init_state=init_state[:,:,:52*3+52*6+3] # [nf,b,52*3+52*6+3]
-        obj_init_state=init_state[:,:,52*3+52*6+3:] # [nf,b,2*9]
+        human_init_state=init_state[:,:,:24*3+22*6+3] # [nf,b,24*3+22*6+3]
+        obj_init_state=init_state[:,:,24*3+22*6+3:] # [nf,b,9]
 
-        # Object branch
+        # Object branch,    第一个是bps的表示，第二个是只有第一帧没有被mask，第三个是加噪的obj表示
         obj_emb=self.embed_obj_pose(torch.concat([obj_geo_emb,obj_init_state,obj_x],dim=-1)) # nframes,bs,latent_dim
         obj_seq_prev=self.sequence_pos_encoder(obj_emb) # [nf,bs,latent_dim]
 
@@ -122,16 +124,17 @@ class NET_2O(nn.Module):
         for i in range(self.num_layers):
             obj_seq=self.obj_blocks[i](obj_seq_prev,human_seq_prev,emb, key_padding_mask=key_padding_mask)
             human_seq=self.human_blocks[i](human_seq_prev,obj_seq_prev,emb, key_padding_mask=key_padding_mask)
+            
             obj_seq_prev=obj_seq
             human_seq_prev=human_seq
         obj_seq=obj_seq.permute((1,0,2)) # [nf,bs,latent_dim]
         human_seq=human_seq.permute((1,0,2))
         
 
-        obj_output=self.obj_output_process(obj_seq) # [nf,bs,2*9]
-        human_output=self.human_output_process(human_seq) # [nf,bs,52*3+52*6+3]
+        obj_output=self.obj_output_process(obj_seq) # [nf,bs,9]
+        human_output=self.human_output_process(human_seq) # [nf,bs,24*3+22*6+3]
 
-        output=torch.concat([human_output,obj_output],dim=-1) # [nf,bs,52*3+52*6+3+2*9]
+        output=torch.concat([human_output,obj_output],dim=-1) # [nf,bs,24*3+22*6+3 + 9]
 
         return output.permute((1,0,2))
 
@@ -146,7 +149,7 @@ class NET_2O(nn.Module):
             texts = clip.tokenize(raw_text, context_length=context_length, truncate=True).to(device) # [bs, context_length] # if n_tokens > context_length -> will truncate
             # print('texts', texts.shape)
             zero_pad = torch.zeros([texts.shape[0], default_context_length-context_length], dtype=texts.dtype, device=texts.device)
-            texts = torch.cat([texts, zero_pad], dim=1)
+            texts = torch.cat([texts, zero_pad], dim=1) # [bs, default_context_length]还是给pad到77了，这感觉很奇怪哦，相当于只有前面的部分才有意义
             # print('texts after pad', texts.shape, texts)
         else:
             texts = clip.tokenize(raw_text, truncate=True).to(device) # [bs, context_length] # if n_tokens > 77 -> will truncate
